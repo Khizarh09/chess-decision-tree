@@ -1,152 +1,155 @@
 import chess
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+import time
 
-# === Get board position (FEN or default start) ===
-fen = input("Enter FEN (or press Enter for starting position): ")
+BOARD_SIZE = 8
+explored = []
 
-if fen.strip():
-    try:
-        board = chess.Board(fen)
-    except ValueError:
-        print("Invalid FEN! Using default starting position.")
-        board = chess.Board()
-else:
-    board = chess.Board()
+#HELPERS 
+def square_to_xy(square):
+    x = chess.square_file(square)
+    y = chess.square_rank(square)
+    return (x + 0.5, y + 0.5)
 
-# === Unicode chess pieces ===
-UNICODE_PIECES = {
-    chess.PAWN: '♙',
-    chess.KNIGHT: '♘',
-    chess.BISHOP: '♗',
-    chess.ROOK: '♖',
-    chess.QUEEN: '♕',
-    chess.KING: '♔',
-    "p": '♟', "n": '♞', "b": '♝', "r": '♜', "q": '♛', "k": '♚'
-}
-
-# === Print board function ===
-def print_unicode_board(board):
-    if board.turn == chess.WHITE:
-        ranks = range(8, 0, -1)   # White at bottom
-        files = range(8)          # a → h
-    else:
-        ranks = range(1, 9)       # Black at bottom
-        files = range(7, -1, -1)  # h → a
-
-    print("\n    a b c d e f g h")
-    for rank in ranks:
-        line = f"{rank}  "
-        for file in files:
-            square = chess.square(file, rank - 1)
-            piece = board.piece_at(square)
-            if piece:
-                symbol = UNICODE_PIECES[piece.piece_type] if piece.color == chess.WHITE else UNICODE_PIECES[piece.symbol()]
-            else:
-                symbol = '·'
-            line += symbol + " "
-        print(line)
-    print("    a b c d e f g h\n")
-
-print_unicode_board(board)
-print("Turn:", "White" if board.turn == chess.WHITE else "Black")
-print("Castling rights:", board.castling_rights)
-print("Full move number:", board.fullmove_number)
-
-# === Piece values for evaluation ===
-piece_values = {
-    chess.PAWN: 1,
-    chess.KNIGHT: 3,
-    chess.BISHOP: 3,
-    chess.ROOK: 5,
-    chess.QUEEN: 9,
-    chess.KING: 1000
-}
-
-# === Evaluation function (material + positional bonuses + check bonus) ===
-def evaluate(board):
-    score = 0
-    for piece_type, value in piece_values.items():
-        white_squares = board.pieces(piece_type, chess.WHITE)
-        black_squares = board.pieces(piece_type, chess.BLACK)
-        
-        score += len(white_squares) * value
-        score -= len(black_squares) * value
-
-        # Simple positional bonus: central squares
-        for sq in white_squares:
-            file = chess.square_file(sq)
-            rank = chess.square_rank(sq)
-            if 2 <= file <= 5 and 2 <= rank <= 5:  # d4,e4,d5,e5
-                score += 0.5
-        for sq in black_squares:
-            file = chess.square_file(sq)
-            rank = chess.square_rank(sq)
-            if 2 <= file <= 5 and 2 <= rank <= 5:
-                score -= 0.5
-
-    # Bonus for checks
-    if board.is_check():
-        if board.turn == chess.WHITE:
-            score -= 0.5  # Black threatens check
-        else:
-            score += 0.5  # White threatens check
-
-    return score
-
-print("Evaluation score (positive for White, negative for Black):", evaluate(board))
-
-# === Minimax search with basic alpha-beta pruning ===
-def minimax(board, depth, is_maximizing, alpha=-9999, beta=9999):
+#MINIMAX TRACE 
+def minimax(board, depth, alpha, beta, maximizing, path):
     if depth == 0 or board.is_game_over():
-        return evaluate(board)
+        val = evaluate(board)
+        explored.append({"path": path.copy(), "value": val, "move": None, "depth": depth})
+        return val
 
-    if is_maximizing:
+    legal_moves = list(board.legal_moves)
+
+    if maximizing:
         max_eval = -9999
-        for move in board.legal_moves:
+        for move in legal_moves:
             board.push(move)
-            eval = minimax(board, depth - 1, False, alpha, beta)
+            path.append((square_to_xy(move.from_square), square_to_xy(move.to_square)))
+            current = minimax(board, depth-1, alpha, beta, False, path)
             board.pop()
-            max_eval = max(max_eval, eval)
-            alpha = max(alpha, eval)
+            path.pop()
+            explored.append({"path": path.copy(), "value": current, "move": move.uci(), "depth": depth})
+            max_eval = max(max_eval, current)
+            alpha = max(alpha, max_eval)
             if beta <= alpha:
-                break  # Beta cutoff
+                break
         return max_eval
     else:
         min_eval = 9999
-        for move in board.legal_moves:
+        for move in legal_moves:
             board.push(move)
-            eval = minimax(board, depth - 1, True, alpha, beta)
+            path.append((square_to_xy(move.from_square), square_to_xy(move.to_square)))
+            current = minimax(board, depth-1, alpha, beta, True, path)
             board.pop()
-            min_eval = min(min_eval, eval)
-            beta = min(beta, eval)
+            path.pop()
+            explored.append({"path": path.copy(), "value": current, "move": move.uci(), "depth": depth})
+            min_eval = min(min_eval, current)
+            beta = min(beta, min_eval)
             if beta <= alpha:
-                break  # Alpha cutoff
+                break
         return min_eval
 
-# === Find best move function ===
-def find_best_move(board, depth):
-    best_move = None
-    if board.turn == chess.WHITE:
-        best_score = -9999
-        for move in board.legal_moves:
-            board.push(move)
-            score = minimax(board, depth - 1, False)
-            board.pop()
-            if score > best_score:
-                best_score = score
-                best_move = move
-    else:  # Black
-        best_score = 9999
-        for move in board.legal_moves:
-            board.push(move)
-            score = minimax(board, depth - 1, True)
-            board.pop()
-            if score < best_score:
-                best_score = score
-                best_move = move
-    return best_move, best_score
+def evaluate(board):
+    values = {chess.PAWN:1, chess.KNIGHT:3, chess.BISHOP:3,
+              chess.ROOK:5, chess.QUEEN:9}
+    score = sum(len(board.pieces(p, True))*v - len(board.pieces(p, False))*v
+                for p,v in values.items())
+    return score
 
-# === Run the engine ===
-depth = 3  # Depth 3 gives better tactical awareness
-best_move, best_score = find_best_move(board, depth)
-print("Best move:", best_move)
-print("Best move evaluation score:", best_score)
+#DRAWING 
+def draw_board(ax, board):
+    ax.clear()
+    for x in range(8):
+        for y in range(8):
+            color = "#EEEED2" if (x+y)%2==0 else "#769656"
+            ax.add_patch(plt.Rectangle((x,y),1,1,facecolor=color,edgecolor='black',linewidth=0.25))
+
+    unicode_pieces = {'P':"♙",'N':"♘",'B':"♗",'R':"♖",'Q':"♕",'K':"♔",
+                      'p':"♟",'n':"♞",'b':"♝",'r':"♜",'q':"♛",'k':"♚"}
+
+    for sq in chess.SQUARES:
+        piece = board.piece_at(sq)
+        if piece:
+            x,y = square_to_xy(sq)
+            ax.text(x,y,unicode_pieces[piece.symbol()],fontsize=28,ha="center",va="center",zorder=5)
+
+    ax.set_xlim(0,8)
+    ax.set_ylim(0,8)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_aspect("equal")
+
+#ROOT MINIMAX WITH TIME TRACKING
+def minimax_root(board, depth):
+    legal_moves = list(board.legal_moves)
+    best_move = None
+
+    start_time = time.time()  # start timing
+    if board.turn:  # White to move
+        max_eval = -9999
+        for move in legal_moves:
+            board.push(move)
+            val = minimax(board, depth-1, -9999, 9999, False, [(square_to_xy(move.from_square), square_to_xy(move.to_square))])
+            board.pop()
+            if val > max_eval:
+                max_eval = val
+                best_move = move
+    else:  # Black to move
+        min_eval = 9999
+        for move in legal_moves:
+            board.push(move)
+            val = minimax(board, depth-1, -9999, 9999, True, [(square_to_xy(move.from_square), square_to_xy(move.to_square))])
+            board.pop()
+            if val < min_eval:
+                min_eval = val
+                best_move = move
+    end_time = time.time()  # end timing
+
+    return best_move, end_time - start_time
+
+# VISUALIZATION 
+def visualize_decision_tree(board):
+    fig, ax = plt.subplots(figsize=(6,6))
+    draw_board(ax, board)
+
+    def init():
+        draw_board(ax, board)
+        return []
+
+    def update(frame):
+        node = explored[frame]
+        for artist in list(ax.artists):
+            try:
+                artist.remove()
+            except Exception:
+                pass
+
+        draw_board(ax, board)
+        info_text = ax.text(0.01,0.99,
+                            f"Node {frame+1}/{len(explored)}\nDepth: {node.get('depth')}\nMove: {node.get('move')}\nEval: {node.get('value')}",
+                            transform=ax.transAxes,fontsize=10,va="top",zorder=10,
+                            bbox=dict(facecolor="white",alpha=0.8,edgecolor="none"))
+
+        for f,t in node["path"]:
+            ax.annotate("", xy=t, xytext=f, arrowprops=dict(arrowstyle="->", lw=2, color='red'), zorder=15)
+        return []
+
+    ani = animation.FuncAnimation(fig, update, frames=len(explored),
+                                  init_func=init, interval=25, repeat=False)
+    plt.show()
+
+if __name__ == "__main__":
+    fen = input("Enter FEN (or press Enter for starting position): ").strip()
+    board = chess.Board() if fen=="" else chess.Board(fen)
+
+    depth = int(input("Search depth (recommended 2-4): ") or "3")
+
+    print("\nRunning search to find best move...\n")
+    best_move, duration = minimax_root(board, depth)
+    print(f"Best move found: {best_move.uci()}")
+    print(f"Total explored nodes: {len(explored)}")
+    print(f"Time taken to find best move: {duration:.4f} seconds")
+
+    input("\nPress Enter to start visualization...")
+    visualize_decision_tree(board)
