@@ -85,8 +85,8 @@ def minimax_root(board, depth):
     legal_moves = list(board.legal_moves)
     best_move = None
 
-    start_time = time.time()  # start timing
-    if board.turn:  # White to move
+    start_time = time.time()  
+    if board.turn:  
         max_eval = -9999
         for move in legal_moves:
             board.push(move)
@@ -95,7 +95,7 @@ def minimax_root(board, depth):
             if val > max_eval:
                 max_eval = val
                 best_move = move
-    else:  # Black to move
+    else:  
         min_eval = 9999
         for move in legal_moves:
             board.push(move)
@@ -104,7 +104,7 @@ def minimax_root(board, depth):
             if val < min_eval:
                 min_eval = val
                 best_move = move
-    end_time = time.time()  # end timing
+    end_time = time.time()  
 
     return best_move, end_time - start_time
 
